@@ -1,0 +1,14 @@
+*.asv
+*.fig
+*.png
+*.jpg
+*.jpeg
+*.mat
+
+QC_Results/
+
+*.csv
+!examples/SensorMapping_Template.csv
+
+.DS_Store
+Thumbs.db
