@@ -1,61 +1,77 @@
 clear; clc; close all;
 
-%%ROOT DATASET FOLDER
-rootDir = uigetdir(pwd, 'Select root folder with participant foldrs');
+%% ROOT DATASET FOLDER
+rootDir = uigetdir(pwd, 'Select ROOT folder containing participant folders');
 
-%%OUTPUT
+%% OUTPUT FOLDER
 resultsRoot = fullfile(rootDir, 'QC_Results');
 
 if ~exist(resultsRoot, 'dir')
     mkdir(resultsRoot);
 end
 
-%%SENSOR MAPPING FILE
-mappingFile = fullfile(rootDir, 'SensorMapping.csv');
+%% SENSOR MAPPING FILE
+mappingCSV  = fullfile(rootDir, 'SensorMapping.csv');
+mappingXLSX = fullfile(rootDir, 'SensorMapping.xlsx');
 
-if isfile(mappingFile)
-    SensorMap = readtable(mappingFile);
-else 
-    warning('SensorMapping.csv not found. Segment names will be marked Unknown');
+if isfile(mappingCSV)
+    SensorMap = readtable(mappingCSV);
+elseif isfile(mappingXLSX)
+    SensorMap = readtable(mappingXLSX);
+else
+    warning('SensorMapping.csv/xlsx not found. Segment names will be marked Unknown.');
     SensorMap = table();
 end
 
-%%GET PARTICIPANT FOLDERS
-participants = dir(rootDir);
+%% GET PARTICIPANT FOLDERS ONLY: P2, P3, ..., P20
+participants = dir(fullfile(rootDir, 'P*'));
 participants = participants([participants.isdir]);
-participants = participants(~ismember({participants.name}, {'.','..','QC_Results'}));
+
+fprintf('\nParticipants found:\n');
+disp({participants.name}');
 
 QC_All = table();
 
-for p = 1;length(participants)
+for p = 1:length(participants)
 
     participantID = string(participants(p).name);
-    participantPath = fullfile(rootDir, participantID);
+    participantPath = fullfile(rootDir, participants(p).name);
+
+    fprintf('\n=====================================\n');
+    fprintf('PARTICIPANT %s\n', participantID);
+    fprintf('=====================================\n');
 
     trialFolders = dir(participantPath);
     trialFolders = trialFolders([trialFolders.isdir]);
-    trialFolders = trialFolders(~ismember({trialFolders.name},{'.', '..'}));
+    trialFolders = trialFolders(~ismember({trialFolders.name},{'.','..'}));
 
     for tr = 1:length(trialFolders)
 
         trialFolderName = string(trialFolders(tr).name);
-        trialPath = fullfile(participantPath, trialFolderName);
+        trialPath = fullfile(participantPath, trialFolders(tr).name);
 
-        fprintf('Processing %s | %s\n', participantsID, trialFolderName);
+        fprintf('\nProcessing %s | %s\n', participantID, trialFolderName);
 
-        QC_Trial = process_trial_QC( ...
-            trialPath, ...
-            participantID, ...
-            trialFolderName, ...
-            resultsRoot, ...
-            SensorMap);
+        try
+            QC_Trial = process_trial_QC( ...
+                trialPath, ...
+                participantID, ...
+                trialFolderName, ...
+                resultsRoot, ...
+                SensorMap);
 
-        QC_All = [QC_All; QC_Trial];
+            QC_All = [QC_All; QC_Trial];
 
+        catch ME
+            fprintf('\nERROR PROCESSING:\n');
+            fprintf('Participant: %s\n', participantID);
+            fprintf('Trial: %s\n', trialFolderName);
+            fprintf('Message: %s\n', ME.message);
+        end
     end
 end
 
-%%SAVE MASTER QC FILE
+%% SAVE MASTER QC FILE
 masterOutput = fullfile(resultsRoot, 'QC_AllParticipants.csv');
 writetable(QC_All, masterOutput);
 

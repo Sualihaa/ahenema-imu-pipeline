@@ -1,27 +1,38 @@
 function QC_Trial = process_trial_QC(trialPath, participantID, trialFolderName, resultsRoot, SensorMap)
 
 %% EXTRACT CONDITION AND TRIAL NUMBER
-trialLower = lower(trialFolderName);
+trialName = char(trialFolderName);
+trialUpper = upper(trialName);
 
-if contains(trialLower, "W") 
+% Folder naming supported:
+% T1   = Without Ahenema
+% T1W  = With Ahenema
+% T1_WITH = With Ahenema
+% T1_WITHOUT = Without Ahenema
+
+if contains(trialUpper, 'WITHOUT')
     condition = "Without Ahenema";
+elseif contains(trialUpper, 'WITH')
+    condition = "With Ahenema";
+elseif endsWith(trialUpper, 'W')
+    condition = "With Ahenema";
 else
-    condition = "With Ahenema"
+    condition = "Without Ahenema";
 end
 
-trialNumMatch = regexp(trialFolderName, 'd+'. 'match');
+trialNumMatch = regexp(trialName, '\d+', 'match');
 
 if isempty(trialNumMatch)
     trialNumber = NaN;
 else
-    trialNumber = str2double(trialNumMatch{end});
+    trialNumber = str2double(trialNumMatch{1});
 end
 
 %% OUTPUT FOLDER FOR THIS TRIAL
-trialResultsFolder = fullfile(resultsRoot, participantID, trialFolderName);
+trialResultsFolder = fullfile(resultsRoot, char(participantID), trialName);
 
 if ~exist(trialResultsFolder, 'dir')
-    mkdir (trialResultsFolder);
+    mkdir(trialResultsFolder);
 end
 
 plotFolder = fullfile(trialResultsFolder, 'QC_Plots');
@@ -35,7 +46,8 @@ files = dir(fullfile(trialPath, '*.txt'));
 
 QC_Trial = table();
 
-for f= 1:length(files)
+for f = 1:length(files)
+
     sensorFile = fullfile(trialPath, files(f).name);
 
     QC_Row = qc_single_INDIP_sensor(sensorFile, plotFolder);
@@ -43,28 +55,32 @@ for f= 1:length(files)
 
     %% FIND SEGMENT FROM MAPPING FILE
     segment = "Unknown";
-
+    
     if ~isempty(SensorMap)
-
-        idx = string(SensorMap.Participant) == participantID & ...
-            string(SensorMap.Condition) == condition & ...
-            SensorMap.Trial == trialNumber & ...
-            string(SensorMap.DeviceID) == deviceID;
-
+    
+        idx = string(SensorMap.DeviceID) == string(deviceID);
+    
         if any(idx)
-            segment= string(SensorMap.Segment(find(idx, 1)));
+            segment = string(SensorMap.Segment(find(idx,1)));
         end
+    
     end
 
     %% APPEND METADATA
     QC_Row = addvars(QC_Row, ...
-        participantID, ...
+        string(participantID), ...
         condition, ...
         trialNumber, ...
         segment, ...
-        'Before','File', ...
+        'Before', 'File', ...
         'NewVariableNames', {'Participant', 'Condition', 'Trial', 'Segment'});
 
-        QC_Trial = [QC_Trial; QC_Row];
+    QC_Trial = [QC_Trial; QC_Row];
+
 end
 
+%% SAVE TRIAL QC
+trialOutput = fullfile(trialResultsFolder, 'QC_Trial.csv');
+writetable(QC_Trial, trialOutput);
+
+end

@@ -11,14 +11,16 @@ mag_limit_mGauss = 50000;
 static_search_seconds = 6;
 static_window_seconds = 2;
 
-[~, fileBase, ext] = fileparts(filename);
-filename = string([fileBase ext]);
+filename = char(filename);
 
-fprintf('Processing sensor file: %s\n', filename);
+[~, fileBase, ext] = fileparts(filename);
+fileName = string(strcat(fileBase, ext));
+
+fprintf('Processing sensor file: %s\n', char(fileName));
 
 %% READ DEVICE ID FROM HEADER
-fileText = fileread(filename);
-deviceMatch = regexp(fileText, 'Id:\s*(INDIP#d+)', 'tokens');
+fileText = fileread(char(filename));
+deviceMatch = regexp(fileText, 'Id:\s*(INDIP[#]?\d+)', 'tokens');
 
 if isempty(deviceMatch)
     deviceID = "UnknownDevice";
@@ -26,24 +28,28 @@ else
     deviceID = string(deviceMatch{1}{1});
 end
 
+if contains(deviceID, "INDIP") && ~contains(deviceID, "#")
+    deviceID = replace(deviceID, "INDIP", "INDIP#");
+end
+
 %% READ DATA TABLE
 opts = detectImportOptions(filename, ...
-    'FileType','text', ...
-    'Delimeter', '\t');
+    'FileType', 'text', ...
+    'Delimiter', '\t');
 
 opts.VariableNamesLine = 19;
 opts.DataLines = [21 Inf];
 
 T = readtable(filename, opts);
-T.properties.VariableNames = matlab.lang.makeValidName(T.Properties.VariableNames);
+T.Properties.VariableNames = matlab.lang.makeValidName(T.Properties.VariableNames);
 
 %% EXTRACT SIGNALS
 timestamp = T.Timestamp;
-t = (timestamp - timestamp(1))/1000;
+t = (timestamp - timestamp(1)) / 1000;
 
-ax = T.Acc_X /1000;
-ay = T.Acc_Y /1000;
-az = T.Acc_Z /1000;
+ax = T.Acc_X / 1000;
+ay = T.Acc_Y / 1000;
+az = T.Acc_Z / 1000;
 
 gx = T.Gyro_X;
 gy = T.Gyro_Y;
@@ -53,20 +59,20 @@ mx = T.Magn_X;
 my = T.Magn_Y;
 mz = T.Magn_Z;
 
-%% TIMESTAMP
+%% TIMESTAMP QC
 dt = diff(timestamp);
 
 nSamples = height(T);
-duration_timestamp = (timestamp(end) - timestamp(1))/1000;
-duration_sample_based = (nSamples -1)/fs_expected;
+duration_timestamp = (timestamp(end) - timestamp(1)) / 1000;
+duration_sample_based = (nSamples - 1) / fs_expected;
 
-TimestampVsSampleDrif_s = duration_timestamp - duration_sample_based;
+TimestampVsSamplesDrift_s = duration_timestamp - duration_sample_based;
 
-dropped_packets = sum(dt > 1.5*dt_expected_ms);
+dropped_packets = sum(dt > 1.5 * dt_expected_ms);
 duplicate_timestamps = sum(dt == 0);
 negative_time_jumps = sum(dt < 0);
 
-clean_dt = dt(dt > 0 & dt < 1.5*dt_expected_ms);
+clean_dt = dt(dt > 0 & dt < 1.5 * dt_expected_ms);
 
 mean_dt = mean(dt);
 std_dt = std(dt);
@@ -84,8 +90,8 @@ mag_mag = sqrt(mx.^2 + my.^2 + mz.^2);
 
 %% SATURATION CHECKS
 acc_saturation = sum(abs(ax) > 0.98*acc_limit_g | ...
-    abs(ay) > 0.98*acc_limit_g | ...
-    abs(az) > 0.98*acc_limit_g);
+                     abs(ay) > 0.98*acc_limit_g | ...
+                     abs(az) > 0.98*acc_limit_g);
 
 gyro_saturation = sum(abs(gx) > 0.98*gyro_limit_dps | ...
                       abs(gy) > 0.98*gyro_limit_dps | ...
@@ -97,38 +103,39 @@ mag_saturation = sum(abs(mx) > 0.98*mag_limit_mGauss | ...
 
 %% AUTOMATIC STATIC WINDOW DETECTION
 window_samples = round(static_window_seconds * fs_expected);
-searchidx = find(t <= static_search_seconds);
+search_idx = find(t <= static_search_seconds);
 
 scores = nan(length(search_idx), 1);
 
-if length(searchidx) > window_samples
+if length(search_idx) > window_samples
 
-    for k = 1:(length(searchidx)-window_samples)
+    for k = 1:(length(search_idx) - window_samples)
 
-        idx = search_idx(k):(search_idx(k)+window_samples-1)
+        idx = search_idx(k):(search_idx(k) + window_samples - 1);
+
         acc_mag_mean = mean(acc_mag(idx));
         acc_mag_std = std(acc_mag(idx));
         gyro_mag_mean = mean(gyro_mag(idx));
 
         scores(k) = abs(acc_mag_mean - 1) + acc_mag_std + 0.01*gyro_mag_mean;
-
     end
 
-        [~, best_k] = min(scores);
+    [~, best_k] = min(scores);
 
     static_start_idx = search_idx(best_k);
     static_end_idx = static_start_idx + window_samples - 1;
 
 else
-
     warning('File too short for static-window detection. Using first available samples.');
     static_start_idx = 1;
     static_end_idx = min(length(t), window_samples);
-
 end
 
 static_idx = false(size(t));
 static_idx(static_start_idx:static_end_idx) = true;
+
+static_start_time = t(static_start_idx);
+static_end_time = t(static_end_idx);
 
 %% STATIC METRICS
 mean_ax_static = mean(ax(static_idx));
@@ -139,17 +146,15 @@ static_acc_vector = [mean_ax_static, mean_ay_static, mean_az_static];
 
 [~, dominant_axis_index] = max(abs(static_acc_vector));
 
-axis_names = ["X","Y","Z"];
+axis_names = ["X", "Y", "Z"];
 dominant_gravity_axis = axis_names(dominant_axis_index);
 dominant_gravity_value = static_acc_vector(dominant_axis_index);
 
 if dominant_gravity_value >= 0
-    gravity_axis_sign = "+";
+    gravity_axis_label = "POS_" + dominant_gravity_axis;
 else
-    gravity_axis_sign = "-";
+    gravity_axis_label = "NEG_" + dominant_gravity_axis;
 end
-
-gravity_axis_label = gravity_axis_sign + dominant_gravity_axis;
 
 gyro_bias_x = mean(gx(static_idx));
 gyro_bias_y = mean(gy(static_idx));
@@ -235,7 +240,7 @@ QC_Row.Properties.VariableNames = { ...
     'StaticMagMag_Mean_mGauss', ...
     'StaticMagMag_STD_mGauss'};
 
-%% PLOTS
+%% SAVE PLOTS
 save_sensor_qc_plots( ...
     fileName, plotFolder, ...
     t, dt, ...
