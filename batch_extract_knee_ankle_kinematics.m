@@ -7,7 +7,7 @@ if isequal(rootDir, 0)
     error('No root folder selected.');
 end
 
-optionsToAnalyze = ["HybridAligned", "MagON"];
+optionsToAnalyze = ["MagOFF"];
 
 AllSummary = table();
 ExtractLog = table();

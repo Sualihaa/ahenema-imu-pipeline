@@ -18,7 +18,7 @@ if ~isfile(modelFileName)
 end
 
 % Main + sensitivity options
-optionsToRun = ["HybridAligned", "MagON", "MagOFF"];
+optionsToRun = ["MagOFF"];
 
 % OpenSense settings
 baseIMUName = 'pelvis_imu';
