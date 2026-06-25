@@ -16,7 +16,6 @@ for i = 1:length(imuNames)
 
 end
 
-% Method 1: direct setter
 try
     imuIK.set_orientation_weights(orientationWeights);
     fprintf('Orientation weights set using set_orientation_weights().\n');
@@ -25,7 +24,6 @@ catch
     fprintf('Direct set_orientation_weights() failed. Trying upd_orientation_weights().\n');
 end
 
-% Method 2: update internal set
 try
     currentWeights = imuIK.upd_orientation_weights();
     currentWeights.clearAndDestroy();
